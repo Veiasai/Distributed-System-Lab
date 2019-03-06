@@ -22,18 +22,20 @@
 #include "rdt_receiver.h"
 
 #include <algorithm>
+#include <iostream>
+
+using namespace std;
 
 static const int window_size = 10;
-static struct packet * window[window_size];
+static struct message * window[window_size];
 static int cur;
 extern volatile int send_cur;
-
 
 /* receiver initialization, called once at the very beginning */
 void Receiver_Init()
 {
     fprintf(stdout, "At %.2fs: receiver initializing ...\n", GetSimulationTime());
-    memcpy(window, 0, sizeof(window));
+    memset(window, 0, sizeof(window));
     cur = 0;
 }
 
@@ -50,50 +52,73 @@ void Receiver_Final()
    receiver */
 void Receiver_FromLowerLayer(struct packet *pkt)
 {
-    /* 1-byte header indicating the size of the payload */
-    int header_size = 8;
-    // check id
-    int re_id = *(int*)(pkt->data+4);
+    try{
+        unsigned long long checksum = 0;
+        struct message *msg;
+        /* 1-byte header indicating the size of the payload */
+        const int header_size = 8;
 
-    // check ack
-    if (pkt->data[1] != 0 && re_id > send_cur){
-        send_cur = re_id;
+        for (int i=0;i<RDT_PKTSIZE;i+=8){
+            checksum ^= *(unsigned long long *)(pkt->data+i);
+        }
+        checksum = (checksum ^ (checksum >> 32));
+        checksum = (checksum ^ (checksum >> 16));
+        checksum = (checksum ^ (checksum >> 8)) & 0xFF;
+        // cout << "RE" << checksum << endl;
+        // exit(0);
+        if (checksum != 0) {
+            //cout << "sum error" << endl; 
+            return;
+        }
+
+        // check id
+        int re_id = *(int*)(pkt->data+4);
+        if (re_id >= cur + window_size) { 
+            //cout << "RB" << re_id << " " << cur << endl; 
+            return; }
+        else if (re_id < cur) {
+            //cout << "RC" << cur << endl; 
+            goto ACK;
+            }
+        // ensure index
+        re_id = re_id % window_size;
+
+        if (window[re_id] != NULL){
+            //cout << "redundant" << endl;
+            goto ACK;
+        }
+        /* construct a message and deliver to the upper layer */
+        msg = (struct message*) malloc(sizeof(struct message));
+        ASSERT(msg!=NULL);
+
+        msg->size = pkt->data[0];
+
+        /* sanity check in case the packet is corrupted */
+        if (msg->size<0) msg->size=0;
+        if (msg->size>RDT_PKTSIZE-header_size) msg->size=RDT_PKTSIZE-header_size;
+
+        msg->data = (char*) malloc(msg->size);
+        ASSERT(msg->data!=NULL);
+        memcpy(msg->data, pkt->data+header_size, msg->size);
+        window[re_id] = msg;
+        while((msg = window[cur % window_size])){
+            Receiver_ToUpperLayer(msg);
+            window[cur % window_size] = NULL;
+            /* don't forget to free the space */
+            if (msg->data!=NULL) free(msg->data);
+            if (msg!=NULL) free(msg);
+            cur++;
+
+            //cout << "receive " << cur << endl;
+        }
+        
+    ACK: // return ack
+        packet pkt_ack;
+        pkt_ack.data[1] = -1;
+        *(int*)(pkt_ack.data+4) = cur - 1;
+        *(int*)(pkt_ack.data+8) = cur - 1;
+        Receiver_ToLowerLayer(&pkt_ack);
+    }catch(exception e){
         return;
     }
-
-    if (re_id > cur + window_size) return;
-
-    /* construct a message and deliver to the upper layer */
-    struct message *msg = (struct message*) malloc(sizeof(struct message));
-    ASSERT(msg!=NULL);
-
-    msg->size = pkt->data[0];
-
-    /* sanity check in case the packet is corrupted */
-    if (msg->size<0) msg->size=0;
-    if (msg->size>RDT_PKTSIZE-header_size) msg->size=RDT_PKTSIZE-header_size;
-
-    // check sum
-    char checksum = msg->data[1];
-    for (int i=0;i++;i<msg->size){
-        checksum ^= msg->data[i+8];
-    }
-    if (checksum != 0) return;
-
-    msg->data = (char*) malloc(msg->size);
-    ASSERT(msg->data!=NULL);
-    memcpy(msg->data, pkt->data+header_size, msg->size);
-
-
-    Receiver_ToUpperLayer(msg);
-
-    // return ack
-    struct packet pkt_ack;
-    pkt_ack.data[1] = -1;
-    *(int*)(pkt_ack.data+4) = cur;
-    Receiver_ToLowerLayer(&pkt_ack);
-
-    /* don't forget to free the space */
-    if (msg->data!=NULL) free(msg->data);
-    if (msg!=NULL) free(msg);
 }
