@@ -92,7 +92,7 @@ void Sender_FromUpperLayer(struct message *msg)
         generate_check_sum(pkt.data);
         /* send it out through the lower layer */
 
-        if (id - send_cur < 10) 
+        if (id - send_cur < 10)
             Sender_ToLowerLayer(&pkt);
         window.push_back(std::move(pkt));
         /* move the cursor */
@@ -128,13 +128,13 @@ void Sender_FromLowerLayer(struct packet *pkt)
 
     if (pkt->data[1] != 0 && re_id >= send_cur){
         send_cur = re_id + 1;
+        for (int i=send_cur;i<window.size() && i<send_cur+2;i++){
+            Sender_ToLowerLayer(&window[send_cur]);
+        }
     }
-    if (send_cur == id){
-        Sender_StopTimer();
-    }else{
-        if (!Sender_isTimerSet())
-            Sender_StartTimer(0.3);
-    }
+
+    Sender_StartTimer(0.3);
+    
     //cout << "SF " << send_cur << " " << id << endl;
 }
 
@@ -144,6 +144,7 @@ void Sender_Timeout()
     if (send_cur == id)
         return;
     //cout << "Timeout" << send_cur << " " << id << " "<< window.size()<< endl;
-    Sender_ToLowerLayer(&window[send_cur]);
     Sender_StartTimer(0.3);
+    Sender_ToLowerLayer(&window[send_cur]);
+    
 }

@@ -101,6 +101,7 @@ void Receiver_FromLowerLayer(struct packet *pkt)
         ASSERT(msg->data!=NULL);
         memcpy(msg->data, pkt->data+header_size, msg->size);
         window[re_id] = msg;
+    
         while((msg = window[cur % window_size])){
             Receiver_ToUpperLayer(msg);
             window[cur % window_size] = NULL;
