@@ -19,6 +19,7 @@
 #include <string.h>
 #include <vector>
 #include <iostream>
+#include <map>
 
 #include "rdt_struct.h"
 #include "rdt_sender.h"
@@ -27,6 +28,7 @@ using namespace std;
 
 static int id;
 static vector<packet> window;
+static map<int,bool> ack;
 volatile int send_cur;
 
 static const int header_size = 8;
@@ -92,7 +94,7 @@ void Sender_FromUpperLayer(struct message *msg)
         generate_check_sum(pkt.data);
         /* send it out through the lower layer */
 
-        if (id - send_cur < 10)
+        if (id - send_cur < 20)
             Sender_ToLowerLayer(&pkt);
         window.push_back(std::move(pkt));
         /* move the cursor */
@@ -109,42 +111,52 @@ void Sender_FromUpperLayer(struct message *msg)
 
         generate_check_sum(pkt.data);
         /* send it out through the lower layer */
-        if (id - send_cur < 10) 
-            Sender_ToLowerLayer(&pkt);
+
         window.push_back(std::move(pkt));
+        for (int i=send_cur;i<send_cur+10 && i < window.size();i++){
+            if (ack[i]) continue;
+            ack[i] = 1;
+            Sender_ToLowerLayer(&window[i]);
+        }
     }
     if (!Sender_isTimerSet())
-            Sender_StartTimer(0.2);
+        Sender_StartTimer(0.5);
 }
 
 /* event handler, called when a packet is passed from the lower layer at the 
    sender */
+
 void Sender_FromLowerLayer(struct packet *pkt)
 {
     // check ack
     int re_id = *(int*)(pkt->data+4);
     int check = *(int*)(pkt->data+8);
     if (re_id != check) return;
-
+    ack[re_id] = 2;
     if (pkt->data[1] != 0 && re_id >= send_cur){
         send_cur = re_id + 1;
-        for (int i=send_cur;i<window.size() && i<send_cur+2;i++){
-            Sender_ToLowerLayer(&window[send_cur]);
-        }
     }
 
-    Sender_StartTimer(0.3);
+    Sender_StartTimer(0.12);
     
     //cout << "SF " << send_cur << " " << id << endl;
 }
 
 /* event handler, called when the timer expires */
+static bool limit_flag = 0;
 void Sender_Timeout()
 {
     if (send_cur == id)
         return;
     //cout << "Timeout" << send_cur << " " << id << " "<< window.size()<< endl;
+    int c = 0;
+    int limit = 3;
+    limit_flag = ~limit_flag;
+    if (limit_flag) limit--; 
+    for (int i=send_cur;i<window.size() && i<send_cur+10;i++){
+        if (ack[i] == 2) continue;
+        if (c++ > limit) break;
+        Sender_ToLowerLayer(&window[i]);
+    }
     Sender_StartTimer(0.3);
-    Sender_ToLowerLayer(&window[send_cur]);
-    
 }
