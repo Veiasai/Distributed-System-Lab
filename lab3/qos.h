@@ -7,10 +7,7 @@
  * Single-Rate Three Color Meter, blind mode
  */
 
-#define FUNC_METER(a,b,c) rte_meter_srtcm_color_blind_check(a,b,c)
-#define FUNC_CONFIG   rte_meter_srtcm_config
-#define PARAMS        app_srtcm_params
-#define FLOW_METER    struct rte_meter_srtc
+
 
 enum qos_color {
     GREEN = 0,
