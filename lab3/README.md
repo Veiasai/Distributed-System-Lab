@@ -22,3 +22,54 @@
 - 然而一个令人窒息的参数，wg-log2，这个参数极大的影响了结果，而且我并不知道怎么测算。
 - 据说是queue大小调整的速率，那么一般来说，这个参数也应该符合速率比例，即8421。
 - 通过实际运行，使得这个参数，让flow1恰好跑满，其他flow依次按length比例降低。
+
+## API
+
+### Meter
+
+  ```c
+  int
+  rte_meter_srtcm_config(struct rte_meter_srtcm *m,
+    struct rte_meter_srtcm_params *params);
+  ```
+
+初始化每个流的srtcm的runtime data。
+
+  ``` c
+  static inline enum rte_meter_color
+  rte_meter_srtcm_color_blind_check(struct rte_meter_srtcm *m,
+    uint64_t time,
+    uint32_t pkt_len);
+  ```
+
+给到来的每一个包染色，传入的srtcm为每个流对应的runtime data。
+
+### Dropper
+
+ ```c
+ int
+ rte_red_config_init(struct rte_red_config *red_cfg,
+    const uint16_t wq_log2,
+    const uint16_t min_th,
+    const uint16_t max_th,
+    const uint16_t maxp_inv);
+ ```
+
+初始化config。
+
+ ```c
+ int
+ rte_red_rt_data_init(struct rte_red *red);
+ ```
+
+初始化dropper的runtime data。
+
+```c
+ static inline int
+ rte_red_enqueue(const struct rte_red_config *red_cfg,
+    struct rte_red *red,
+    const unsigned q,
+    const uint64_t time);
+```
+
+判断一个包是否能入队。
